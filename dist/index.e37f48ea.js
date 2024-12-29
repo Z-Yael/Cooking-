@@ -620,11 +620,15 @@ const controlRecipes = async function() {
         // console.log('Id is ', id);
         if (!id) return;
         (0, _recipeViewDefault.default).renderSpinner();
+        //Update results view to mark selected search result.
+        (0, _resultsViewDefault.default).update(_model.getSearchResultsPage());
         //1.Loading recipe
         await _model.loadRecipe(id);
         const { recipe } = _model.state;
         //2) Rendering recipe
         (0, _recipeViewDefault.default).render(recipe);
+    //Test
+    // controlServings();
     } catch (err) {
         (0, _recipeViewDefault.default).renderError();
     }
@@ -656,8 +660,17 @@ const controlPagination = function(goToPage) {
     //Render new pagination
     (0, _paginationViewDefault.default).render(_model.state.search);
 };
+const controlServings = function(newServings) {
+    //Update the recipe serving (in state)
+    _model.updateServings(newServings);
+    // Update the recipe View
+    // recipeView.render(model.state.recipe);
+    (0, _recipeViewDefault.default).update(_model.state.recipe);
+    console.log(_model.state.recipe);
+};
 const init = function() {
     (0, _recipeViewDefault.default).addHandlerRender(controlRecipes);
+    (0, _recipeViewDefault.default).addHandlerUpdateServings(controlServings);
     (0, _searchViewDefault.default).addHandlerSearch(controlSearchResults);
     (0, _paginationViewDefault.default).addHandlerClick(controlPagination);
 };
@@ -2536,6 +2549,7 @@ parcelHelpers.export(exports, "state", ()=>state);
 parcelHelpers.export(exports, "loadRecipe", ()=>loadRecipe);
 parcelHelpers.export(exports, "loadSearchResults", ()=>loadSearchResults);
 parcelHelpers.export(exports, "getSearchResultsPage", ()=>getSearchResultsPage);
+parcelHelpers.export(exports, "updateServings", ()=>updateServings);
 var _configJs = require("./config.js");
 var _helperJs = require("./helper.js");
 const state = {
@@ -2562,6 +2576,7 @@ const loadRecipe = async function(id) {
             cookingTime: recipe.cooking_time,
             ingredients: recipe.ingredients
         };
+        console.log(state.recipe);
     } catch (err) {
         // console.error(`${err} 🔥🔥🔥🔥`);
         throw err;
@@ -2590,9 +2605,15 @@ const getSearchResultsPage = function(page = state.search.page) {
     state.search.page = page;
     let start = (page - 1) * state.search.resultsPerPage;
     let end = page * state.search.resultsPerPage;
-    console.log(start, end);
-    console.log(state.search.results.slice(start, end));
+    // console.log(start, end);
+    // console.log(state.search.results.slice(start, end));
     return state.search.results.slice(start, end);
+};
+const updateServings = function(newServings) {
+    state.recipe.ingredients.forEach((ing)=>{
+        ing.quantity = ing.quantity * (newServings / state.recipe.servings);
+    });
+    state.recipe.servings = newServings;
 };
 
 },{"@parcel/transformer-js/src/esmodule-helpers.js":"gkKU3","./config.js":"k5Hzs","./helper.js":"lVRAz"}],"k5Hzs":[function(require,module,exports,__globalThis) {
@@ -2644,6 +2665,25 @@ class RecipeView extends (0, _viewJsDefault.default) {
     _parentElement = document.querySelector('.recipe');
     _errorMessage = "We couldn't find the recipe. Please try another one.";
     _message;
+    addHandlerUpdateServings(handler) {
+        this._parentElement.addEventListener('click', function(e) {
+            const btn = e.target.closest('.btn--update-servings');
+            if (!btn) return;
+            console.log(btn);
+            const updateTo = +btn.getAttribute('data-update-to');
+            // const { updateTo } = +btn.dataset.updateTo;
+            console.log(updateTo);
+            if (updateTo > 0) handler(updateTo);
+        });
+    }
+    // addHandlerUpdateServings(handler) {
+    //   this._parentElement.addEventListener('click', function (e) {
+    //     const btn = e.target.closest('.btn--update-servings');
+    //     if (!btn) return;
+    //     const { updateTo } = btn.dataset;
+    //     if (+updateTo > 0) handler(+updateTo);
+    //   });
+    // }
     _generateMarkup() {
         return `<figure class="recipe__fig">
           <img src="${this._data.image}" alt="Tomato" class="recipe__img" />
@@ -2668,12 +2708,12 @@ class RecipeView extends (0, _viewJsDefault.default) {
             <span class="recipe__info-text">servings</span>
 
             <div class="recipe__info-buttons">
-              <button class="btn--tiny btn--increase-servings">
+              <button class="btn--tiny btn--update-servings " data-update-to="${this._data.servings - 1}">
                 <svg>
                   <use href="${0, _iconsSvgDefault.default}#icon-minus-circle"></use>
                 </svg>
               </button>
-              <button class="btn--tiny btn--increase-servings">
+              <button class="btn--tiny btn--update-servings " data-update-to="${this._data.servings + 1}">
                 <svg>
                   <use href="${0, _iconsSvgDefault.default}#icon-plus-circle"></use>
                 </svg>
@@ -3035,12 +3075,36 @@ var _iconsSvgDefault = parcelHelpers.interopDefault(_iconsSvg);
 class View {
     _data;
     render(data) {
-        if (!data || Array.isArray(data) && data.length === 0) return this.renderError();
         this._data = data;
         // console.log(this._data);
         const markup = this._generateMarkup();
         this._clear();
         this._parentElement.insertAdjacentHTML('afterBegin', markup);
+    }
+    update(data) {
+        if (!data || Array.isArray(data) && data.length === 0) return this.renderError();
+        this._data = data;
+        const newMarkup = this._generateMarkup();
+        const newDOM = document.createRange().createContextualFragment(newMarkup); //from string to DOM
+        const newElements = Array.from(newDOM.querySelectorAll('*')); //DOM to array
+        const curElements = Array.from(this._parentElement.querySelectorAll('*'));
+        // console.log(curElements);
+        // console.log(newElements);
+        newElements.forEach((newEl, i)=>{
+            const curEl = curElements[i];
+            // console.log(newEl, newEl.isEqualNode(curEl));
+            //Update changed text
+            if (!newEl.isEqualNode(curEl) && newEl.firstChild.nodeValue.trim() !== '') {
+                // console.log('🔥', newEl.firstChild.nodeValue.trim());
+                curEl.textContent = newEl.textContent;
+                console.log(newEl.textContent);
+            }
+            //Update changed Attributes
+            if (!newEl.isEqualNode(curEl)) {
+                console.log(Array.from(newEl.attributes));
+                Array.from(newEl.attributes).forEach((attr)=>curEl.setAttribute(attr.name, attr.value));
+            }
+        });
     }
     _clear() {
         this._parentElement.innerHTML = '';
@@ -3065,7 +3129,7 @@ class View {
                 </div>
                 <p>${message}</p>
               </div>`;
-        console.log(markup);
+        // console.log(markup);
         console.log(message);
         this._parentElement.insertAdjacentHTML('afterBegin', markup);
     }
@@ -3127,8 +3191,9 @@ class ResultView extends (0, _viewJsDefault.default) {
         return this._data.map(this._generateMarkupPreview).join('');
     }
     _generateMarkupPreview(result) {
+        const id = window.location.hash.slice(1);
         return `<li class="preview">
-            <a class="preview__link preview__link--active" href="#${result.id}">
+            <a class="preview__link ${result.id === id ? 'preview__link--active' : ''}" href="#${result.id}">
               <figure class="preview__fig">
                 <img src="${result.image}" alt"${result.title}" />
               </figure>
@@ -3163,12 +3228,12 @@ class PaginationView extends (0, _viewJsDefault.default) {
     }
     _generateMarkup() {
         const curPage = this._data.page;
-        console.log(curPage);
-        console.log(this._data);
+        // console.log(curPage);
+        // console.log(this._data);
         //accept model.state.search as parameter
         //Calculating the number of pages
         const numPages = Math.ceil(this._data.results.length / this._data.resultsPerPage);
-        console.log(numPages);
+        // console.log(numPages);
         //Page 1 and there are  other pages
         if (curPage === 1 && numPages > 1) return `<button data-goto=${curPage + 1} class="btn--inline pagination__btn--next">
             <span>Page ${curPage + 1}</span>
